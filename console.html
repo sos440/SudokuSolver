@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="ko" xml:lang="ko">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta http-equiv="Content-Script-Type" content="text/javascript" />
+<meta http-equiv="Content-Style-Type" content="text/css" />
+<title>Console Page</title>
+<!-- Style -->
+<style type="text/css">
+body { overflow-y:scroll; }
+div { -webkit-print-color-adjust:exact; }
+
+#oSudokuView { padding:12px; position:relative; width:441px; height:441px; margin-left:auto; margin-right:auto; color:black; background-color:white; }
+#oConsole { height:300px; overflow-y:auto; font-family:'Courier New', 'Gulim'; font-size:9pt; color:black; background-color:white; border:2px solid gray; }
+#oConsole div { padding:0px 12px 0px 20px; word-wrap:break-word; }
+#oConsole .stg_title { padding:3px 12px; margin:16px 0px 4px 0px; font-weight:bold; background-color:#e6e6e6; }
+#oConsole .stg_title2 { padding:3px 12px; margin:16px 0px 4px 0px; font-weight:bold; background-color:#b8e846; }
+#oConsole .stg_title3 { padding:3px 12px; margin:16px 0px 4px 0px; font-weight:bold; color:white; background-color:#20804d; }
+#oConsole .stg_stat { padding:3px 12px; margin:24px 0px 4px 0px; font-weight:bold; background-color:skyblue; }
+#oConsole .stg_hdr { padding:6px 12px; margin:3px 0px; color:white; background-color:rgb(26, 117, 193); font-size:12pt; font-weight:bold; font-family:Tahoma; }
+
+@media screen, print {
+.pzh_color2 { background-color:#004294; color:white; }
+.pzh_color1 { background-color:#8f9403; color:white; }
+.pzh_error { background-color:red; }
+.pzh_target { background-color:#ffc437; }
+.pzh_group { background-color:#73b2ff; }
+.pzh_key { background-color:#f8b015; }
+.pzh_basis { color:blue; background-color:#6fff83; font-weight:bold; }
+.pzh_remove { color:red; background-color:yellow; }
+}
+
+.pz_candi { float:left; width:15px; height:15px; text-align:center; font-size:12px; font-family:Arial; line-height:15px; z-index:-1; }
+.pz_cell { float:left; width:45px; height:45px; border:1px solid gray; text-align:center; font-size:36px; font-family:Arial; line-height:45px; z-index:1; }
+.pz_box { width:141px; height:141px; padding:2px; margin:0px; }
+.pz_gridbody { padding:0px; margin:0px; border:0px; }
+.pz_grid { padding:2px; border:1px solid silver; border-spacing:0px; }
+.pz_tag { position:absolute; font-family:Arial; font-size:12px; background-color:white; line-height:12px; }
+
+.panel { padding:8px; margin:12px 0px; color:black; background-color:#fffe84; text-align:center; font-family:'Arial'; font-size:10pt; }
+.expandable { margin-left:20px; padding:4px 2px; }
+.hidden { display:none; }
+.expander { font-weight:bold; cursor:pointer; }
+</style>
+
+<!-- jQuery script library -->
+<script type="text/javascript" src="http://code.jquery.com/jquery-1.8.3.min.js">
+</script>
+
+<!-- Object Model Implementation -->
+<script type="text/javascript" src="object_model.js">
+</script>
+
+<!-- Puzzle Class Implementation -->
+<script type="text/javascript" src="puzzle_class.js">
+</script>
+
+<!-- Strategies Implementation -->
+<script type="text/javascript" src="strategies.js">
+</script>
+
+<!-- Strategies Implementation -->
+<script type="text/javascript" src="strategies_aic.js">
+</script>
+
+<!-- Interface Part -->
+<script type="text/javascript" src="interface.js">
+</script>
+
+<!-- Sample Part -->
+<script type="text/javascript" src="puzzle_samples.js">
+</script>
+
+<!-- Controller Part -->
+<script type="text/javascript">
+// Initialize
+$(function(){
+	var sClickEvt = ("ontouchstart" in document.documentElement) ? "touchstart" : "mousedown";
+
+	oMainSolver.selector.initialize("#oSelectSampleList");
+	oMainSolver.printer.initialize("#oConsole");
+	oMainSolver.canvas.initialize("#oSudokuView");
+	
+	$("#oSelectSampleList").on("change", function(){
+		oSelectorNode.choose(this.selectedIndex);
+		oMainSolver.loadFromSelector();
+		});
+	$("#oBtnLoad").on(sClickEvt, function(){
+		oMainSolver.loadFromSelector();
+		});
+	$("#oBtnLoadDirect").on(sClickEvt, function(){
+		if ($("#oRadioTypeS").attr("checked")){
+			oMainSolver.loadFromString({ type : $("#oRadioTypeS").val(), string : $("#oTextLoadString").val() });
+		}
+		else if ($("#oRadioTypeL").attr("checked")){
+			oMainSolver.loadFromString({ type : $("#oRadioTypeL").val(), string : $("#oTextLoadString").val() });
+		}
+		});
+	$("#oBtnNext").on(sClickEvt, function(){
+		oMainSolver.nextStep();
+		});
+	$("#oBtnAuto").on(sClickEvt, function(){
+		oMainSolver.beginAutoNextStep();
+		});
+	$("#oBtnExport").on(sClickEvt, function(){
+		oMainSolver.exportString();
+		});
+	$("#oRadioLangForm").children("input").on(sClickEvt, function(){
+		oMainSolver.lang = this.value;
+		});
+	$("#oChkShowMsg").on(sClickEvt, function(){
+		oMainSolver.mute = ! this.checked;
+		});
+	$("#oChkShowPuzzle").on(sClickEvt, function(){
+		oMainSolver.blind = ! this.checked;
+		});
+	
+	$(".expander").on(sClickEvt, function(){
+		$(this).parent().children(".expandable").toggleClass("hidden");
+		});
+
+	$("#oChkStgNaked2").on(sClickEvt, function(){
+		oStgNakedPair.disabled = ! oStgNakedPair.disabled;
+		this.checked = oStgNakedPair.disabled;
+		return false;
+		});
+	$("#oChkStgNaked3").on(sClickEvt, function(){
+		oStgNakedTriple.disabled = ! oStgNakedTriple.disabled;
+		this.checked = oStgNakedTriple.disabled;
+		return false;
+		});
+	$("#oChkStgNaked4").on(sClickEvt, function(){
+		oStgNakedQuadraple.disabled = ! oStgNakedQuadraple.disabled;
+		this.checked = oStgNakedQuadraple.disabled;
+		return false;
+		});
+	$("#oChkStgHidden2").on(sClickEvt, function(){
+		oStgHiddenPair.disabled = ! oStgHiddenPair.disabled;
+		this.checked = oStgHiddenPair.disabled;
+		return false;
+		});
+	$("#oChkStgHidden3").on(sClickEvt, function(){
+		oStgHiddenTriple.disabled = ! oStgHiddenTriple.disabled;
+		this.checked = oStgHiddenTriple.disabled;
+		return false;
+		});
+	$("#oChkStgInterLock").on(sClickEvt, function(){
+		oStgIntersectionLock.disabled = ! oStgIntersectionLock.disabled;
+		this.checked = oStgIntersectionLock.disabled;
+		return false;
+		});
+	$("#oChkStgFish2").on(sClickEvt, function(){
+		oStgXWing.disabled = ! oStgXWing.disabled;
+		this.checked = oStgXWing.disabled;
+		return false;
+		});
+	$("#oChkStgFish3").on(sClickEvt, function(){
+		oStgSwordfish.disabled = ! oStgSwordfish.disabled;
+		this.checked = oStgSwordfish.disabled;
+		return false;
+		});
+	$("#oChkStgFish4").on(sClickEvt, function(){
+		oStgJellyfish.disabled = ! oStgJellyfish.disabled;
+		this.checked = oStgJellyfish.disabled;
+		return false;
+		});
+	$("#oChkStgXYWing").on(sClickEvt, function(){
+		oStgYWing.disabled = ! oStgYWing.disabled;
+		this.checked = oStgYWing.disabled;
+		return false;
+		});
+	$("#oChkStgBentNS").on(sClickEvt, function(){
+		oStgBentNaked.disabled = ! oStgBentNaked.disabled;
+		this.checked = oStgBentNaked.disabled;
+		return false;
+		});
+	$("#oChkStgAIC").on(sClickEvt, function(){
+		oStgAIC.disabled = ! oStgAIC.disabled;
+		this.checked = oStgAIC.disabled;
+		return false;
+		});
+	
+	var oSearchData = null;
+	if (location.search){
+		oSearchData = {};
+		var aData = location.search.slice(1).split("&");
+		var sKey, sValue
+		for (iN = 0; aData.length > iN; iN++){
+			sKey = aData[iN].slice(0, aData[iN].indexOf("=")).toLowerCase();
+			sValue = aData[iN].slice(aData[iN].indexOf("=")+1);
+			oSearchData[sKey] = sValue;
+		}
+	}
+	if (oSearchData && oSearchData.type && oSearchData.string){
+		oMainSolver.loadFromString(oSearchData);
+	}
+	else {
+		oMainSolver.selector.chooseRandom();
+		oMainSolver.loadFromSelector();
+	}
+});
+</script>
+</head>
+<body>
+<div class="panel">
+	<div style="width:560px; margin-left:auto; margin-right:auto; margin-top:4px; margin-bottom:4px; text-align:left;">
+		<!-- Trees -->
+		<div>
+			<span class="expander">▷ 퍼즐 입력(Puzzle Load)</span>
+			<div class="expandable">
+				<div>
+					<span class="expander">▷ 예제에서 불러오기(Load from Examples)</span>
+					<div class="expandable">
+						<select id="oSelectSampleList" style="width:400px;"></select>
+						<button id="oBtnLoad" style="float:right;">불러오기(Load)</button>
+					</div>
+				</div>
+				<div>
+					<span class="expander">▷ 문자열로 입력하기(Load from String)</span>
+					<div class="expandable hidden">
+						<div>
+							<textarea id="oTextLoadString" style="width:400px; height:100px;"></textarea>
+						</div>
+						<div>
+							종류 : 
+							<input type="radio" id="oRadioTypeS" name="oRadioType" value="simple" checked> <label for="oRadioTypeS">단순(Simple)</label>
+							<input type="radio" id="oRadioTypeL" name="oRadioType" value="long"> <label for="oRadioTypeL">긴(Long)</label>
+							<button id="oBtnLoadDirect" style="float:right;">불러오기(Load)</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div>
+			<span class="expander">▷ 언어(Language)</span>
+			<div class="expandable hidden">
+				<form id="oRadioLangForm">
+					<input type="radio" id="oRadioLangKo" name="oRadioLang" value="ko" checked> <label for="oRadioLangKo">한글</label>
+					<input type="radio" id="oRadioLangEn" name="oRadioLang" value="en"> <label for="oRadioLangEn">English</label>
+				</form>
+			</div>
+		</div>
+		<div>
+			<span class="expander">▷ 자동 풀이 시 중간 표시(Intermediate display)</span>
+			<div class="expandable hidden">
+				<div><input type="checkbox" id="oChkShowMsg" checked> <label for="oChkShowMsg">메세지(Message)</label></div>
+				<div><input type="checkbox" id="oChkShowPuzzle"> <label for="oChkShowPuzzle">퍼즐(Puzzle)</label></div>
+			</div>
+		</div>
+		<div>
+			<span class="expander">▷ 풀이 전략 설정(Strategy Options)</span>
+			<div class="expandable hidden">
+				<div><span class="expander">▷ 셀 잠그기 전략 (Cell-Locking Strategies)</span>
+					<div class="expandable hidden">
+						<div><input type="checkbox" id="oChkStgObvious" checked disabled> <label for="oChkStgObvious">기본적인 후보 지우기 (Obvious Candidate Removal)</label></div>
+						<div><input type="checkbox" id="oChkStgNaked1" checked disabled> <label for="oChkStgNaked1">드러난 단일후보 (Naked Single)</label></div>
+						<div><input type="checkbox" id="oChkStgNaked2" checked> <label for="oChkStgNaked2">드러난 후보쌍 (Naked Pair)</label></div>
+						<div><input type="checkbox" id="oChkStgNaked3" checked> <label for="oChkStgNaked3">드러난 삼중쌍 (Naked Triple)</label></div>
+						<div><input type="checkbox" id="oChkStgNaked4" checked> <label for="oChkStgNaked4">드러난 사중쌍 (Naked Quad)</label></div>
+						<div><input type="checkbox" id="oChkStgHidden1" checked disabled> <label for="oChkStgHidden1">숨은 단일후보 (Hidden Single)</label></div>
+						<div><input type="checkbox" id="oChkStgHidden2" checked> <label for="oChkStgHidden2">숨은 후보쌍 (Hidden Pair)</label></div>
+						<div><input type="checkbox" id="oChkStgHidden3" checked> <label for="oChkStgHidden3">숨은 삼중쌍 (Hidden Triple)</label></div>
+						<div><input type="checkbox" id="oChkStgHidden4" disabled> <label for="oChkStgHidden4">숨은 사중쌍 (Hidden Quad)</label></div>
+					</div>
+				</div>
+				<div><span class="expander">▷ 논리단위 잠그기 전략 (Grid-Locking Strategies)</span>
+					<div class="expandable hidden">
+						<div><input type="checkbox" id="oChkStgInterLock" checked> <label for="oChkStgInterLock">교차로 가두기 (Intersection Lock)</label></div>
+						<div><input type="checkbox" id="oChkStgFish2" checked> <label for="oChkStgFish2">X-날개 (X-Wing)</label></div>
+						<div><input type="checkbox" id="oChkStgFish3" checked> <label for="oChkStgFish3">황새치 (Swordfish)</label></div>
+						<div><input type="checkbox" id="oChkStgFish4" checked> <label for="oChkStgFish4">해파리 (Jellyfish)</label></div>
+					</div>
+				</div>
+				<div><span class="expander">▷ 날개 전략 (Wing Strategies)</span>
+					<div class="expandable hidden">
+						<div><input type="checkbox" id="oChkStgXYWing" checked> <label for="oChkStgXYWing">XY-날개 (XY-Wing)</label></div>
+						<div><input type="checkbox" id="oChkStgXYZWing" disabled> <label for="oChkStgXYZWing">XYZ-날개 (XYZ-Wing)</label></div>
+						<div><input type="checkbox" id="oChkStgBentNS" checked> <label for="oChkStgBentNS">휘어지게 드러난 부분집합 (Bent-Naked Subset)</label></div>
+					</div>
+				</div>
+				<div><span class="expander">▷ 연쇄고리 전략 (Chain Strategies)</span>
+					<div class="expandable hidden">
+						<div><input type="checkbox" id="oChkStgSimpleColoring" disabled> <label for="oChkStgSimpleColoring">단순 색칠 (Simple Coloring)</label></div>
+						<div><input type="checkbox" id="oChkStgMultiColoring" disabled> <label for="oChkStgMultiColoring">다중 색칠 (Simple Coloring)</label></div>
+						<div><input type="checkbox" id="oChkStgXCycle" disabled> <label for="oChkStgXCycle">X-한바퀴 (X-Cycle)</label></div>
+						<div><input type="checkbox" id="oChkStgAIC" checked> <label for="oChkStgAIC">교대 추론 고리 (Alternating Inference Chain)</label></div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<!-- End of Trees -->
+	</div>
+</div>
+<div>
+	<div id="oSudokuView">
+	</div>
+</div>
+<div class="panel">
+	<div>
+		<button id="oBtnPrev" disabled>이전(Prev) (&lt;)</button>
+		<button id="oBtnNext">다음(Next) (&gt;)</button>
+		<button id="oBtnAuto">자동풀이(AutoSolve) (&gt;&gt;)</button>
+		<button id="oBtnExport">내보내기(Export)</button>
+	</div>
+</div>
+<div id="oConsole">
+	<div>Javascript Disabled?!</div>
+</div>
+<div class="panel">
+	<strong>Acknowledgement.</strong> Full credit for the sudoku examples labeled with <a href="http://www.sudokuwiki.org/Main_Page" target="_blank">SudokuWiki</a> is deserved for <a href="http://www.sudokuwiki.org/Main_Page" target="_blank"><em>Andrew Stewart</em></a>, a prominent British logic puzzle maker.
+</div>
+</body>
+</html>
